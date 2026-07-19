@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: hiepp
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: DATABASE_URL
+        sync: false
