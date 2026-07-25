@@ -5,7 +5,15 @@ import psycopg2
 import psycopg2.extras
 
 app = Flask(__name__)
-CORS(app)  # Cho phép frontend gọi từ mọi domain (Netlify, localhost, v.v.)
+CORS(app, origins=[
+    'https://vh1.onrender.com',
+    'https://vh-g4mx.onrender.com',
+    'http://localhost',
+    'null'  # file:// local HTML
+])
+
+# URL server chính
+SERVER_URL = 'https://vh1.onrender.com'
 
 # ═══════════════════════════════════════════════════════════════
 # LƯU DỮ LIỆU VÀO POSTGRES — bền vững thật sự, KHÔNG mất khi
@@ -681,6 +689,13 @@ def set_game_config():
         if 'games' not in cfg:
             cfg['games'] = {}
         cfg['games'][data['game']] = bool(data.get('enabled', True))
+        # Lưu thông báo bảo trì riêng cho game
+        if 'maintMsg' in data:
+            if 'maintMsgs' not in cfg:
+                cfg['maintMsgs'] = {}
+            cfg['maintMsgs'][data['game']] = data['maintMsg']
+    elif 'maintMsgs' in data:
+        cfg['maintMsgs'] = data['maintMsgs']
     elif 'feature' in data:
         if 'features' not in cfg:
             cfg['features'] = {}
@@ -703,6 +718,41 @@ def set_game_config():
         _save(JSONDB)
 
     return jsonify({'ok': True, 'config': cfg}), 200
+
+
+# ── /api/notification — Hòm thư thông báo ──────────────────────────────
+@app.route('/api/notification', methods=['GET'])
+def get_notification():
+    import json as _json
+    if USE_DB and not DB_ERROR:
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT value FROM kv_store WHERE key='notification'")
+        row = cur.fetchone(); cur.close(); conn.close()
+        if row: return jsonify(_json.loads(row['value'])), 200
+        return jsonify({}), 200
+    notif = JSONDB.get('notification', {})
+    return jsonify(notif), 200
+
+@app.route('/api/notification', methods=['POST'])
+def set_notification():
+    import json as _json
+    data = request.json or {}
+    if data.get('clear'):
+        val = {}
+    else:
+        val = {'title': data.get('title',''), 'body': data.get('body',''),
+               'type': data.get('type','info'), 'time': data.get('time','')}
+    if USE_DB and not DB_ERROR:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO kv_store(key,value) VALUES('notification',%s) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
+                    (_json.dumps(val),))
+        conn.commit(); cur.close(); conn.close()
+    else:
+        JSONDB['notification'] = val
+        _save(JSONDB)
+    return jsonify({'ok': True}), 200
 
 
 if __name__ == '__main__':
